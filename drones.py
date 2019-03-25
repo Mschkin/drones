@@ -1,13 +1,15 @@
-import cv2
+#import cv2
 import numpy as np
 import time
 import copy
+import sys
+print(sys.version)
 
 # fluchtpunkt muss in die mitte verschoben werden
 
 
 def splitinparts(frame, n):
-    #print('splitin...',n)
+    # print('splitin...',n)
     shape = np.shape(frame)[0:2]
     # matrix that contains normalized parts and the position of the upper left
     # corner as tuples
@@ -19,8 +21,8 @@ def splitinparts(frame, n):
 
 
 def normalise(frame):
-    #checks that var is not 0
-    return (frame - np.mean(frame, (0, 1))) / ((np.var(frame, (0, 1))==0) +np.var(frame, (0, 1)))**0.5
+    # checks that var is not 0
+    return (frame - np.mean(frame, (0, 1))) / ((np.var(frame, (0, 1)) == 0) + np.var(frame, (0, 1)))**0.5
 
 
 def scalarproduct(bigframe, smallframe, pos):
@@ -38,77 +40,101 @@ def scalarfieldcreator(frame1, frame2, partnumber):
         (partnumber, partnumber, 2 * searchradius // searchstepsize, 2 * searchradius // searchstepsize))
     for x, vec in enumerate(partmatrix):
         for y, part in enumerate(vec):
-            #print(np.shape(part))
+            # print(np.shape(part))
             for i in range(-searchradius, searchradius, searchstepsize):
                 for j in range(-searchradius, searchradius, searchstepsize):
                     scalarfield[x, y, (i + searchradius) // searchstepsize, (j + searchradius) // searchstepsize] =\
-                        scalarproduct(frame2, part, pos[x, y] +np.array([i, j]))
+                        scalarproduct(
+                            frame2, part, pos[x, y] + np.array([i, j]))
                     #visualiseweights(part,frame2,pos[x, y] +np.array([i, j]),scalarfield[x, y, (i + searchradius) // searchstepsize, (j + searchradius) // searchstepsize],frame1,x,y,partnumber)
-    return scalarfield, pos,np.shape(partmatrix[0,0])[:2]
+    return scalarfield, pos, np.shape(partmatrix[0, 0])[:2]
 
 
-def find(scalarfield, pos,smallframeshape):
-    #print(scalarfield)
+def find(scalarfield, pos, smallframeshape):
+    # print(scalarfield)
     # needs to be finished
     m = np.zeros((2, 2))
     qn = np.array([0., 0.])
+
     for i1, vecmat in enumerate(scalarfield):
         for i2, weights in enumerate(vecmat):
             weights = normalise(weights)
-            
-            nis = np.array([[[-j * searchstepsize + searchradius, i *searchstepsize - searchradius] for i in range(2 * searchradius // searchstepsize)] for j in range(2 * searchradius // searchstepsize)], dtype=float)
-            cis = np.array([[ni@pos[i1, i2] for ni in vec] for vec in nis], dtype=float)
-            #print(nis)
+
+            nis = np.array([[[-j * searchstepsize + searchradius, i * searchstepsize - searchradius] for i in range(
+                2 * searchradius // searchstepsize)] for j in range(2 * searchradius // searchstepsize)], dtype=float)
+            cis = np.array([[ni@pos[i1, i2] for ni in vec]
+                            for vec in nis], dtype=float)
+            # remove weights bellow zero
+            weights = weights * (weights > 0)
+            plotpotential(nis, cis, weights)
             for x, vec in enumerate(nis):
                 for y, ni in enumerate(vec):
-                    if weights[x,y]>0:
-                        m += weights[x, y]**5 * np.tensordot(ni, ni, 0)
-                        qn += weights[x, y]**5 * ni * cis[x, y]
+                    m += weights[x, y] * np.tensordot(ni, ni, 0)
+                    qn += weights[x, y] * ni * cis[x, y]
     print(m)
     print(np.linalg.inv(m))
     print(qn)
-    print((2*np.linalg.inv(m)@qn+smallframeshape+2*[2*searchradius])/2)
-    return (2*np.linalg.inv(m)@qn+smallframeshape+2*[2*searchradius])/2
+    print((2 * np.linalg.inv(m)@qn +
+           smallframeshape + 2 * [2 * searchradius]) / 2)
+    return (2 * np.linalg.inv(m)@qn + smallframeshape + 2 * [2 * searchradius]) / 2
 
-def drawepipolarlines(pos,vpoint,f1,f2,smallframeshape):
-    pos=[(2*p+smallframeshape)/2 for vec in pos for p in vec]
+
+def plotpotential(nis, cis, weights):
+    potential = np.zeros((720, 1280))
+    for index, n in np.ndenumerate(nis):
+        for pos, val in np.ndenumerate(potential):
+            potential[pos] += weights[index[0], index[1]] * \
+                (n@pos - cis[index[0], index[1]])**2
+    potential = 255 - int((potential - np.min(potential)) /
+                          (np.max(potential) - np.min(potential)) * 255 + 0.5)
+    potential = np.array(potential, dtype=np.uint8)
+    cv2.imshow('', potential)
+    cv2.waitKey(5000)
+
+
+def drawepipolarlines(pos, vpoint, f1, f2, smallframeshape):
+    pos = [(2 * p + smallframeshape + searchradius * 2) /
+           2 for vec in pos for p in vec]
     for p in pos:
-        #print(p,vpoint)
-        cv2.line(f1,(int(p[1]+0.5),int(p[0]+0.5)),(int(vpoint[1]+0.5),int(vpoint[0]+0.5)),(255,0,0),1)
-        cv2.line(f2,(int(p[1]+0.5),int(p[0]+0.5)),(int(vpoint[1]+0.5),int(vpoint[0]+0.5)),(255,0,0),1)
+        #print(p, vpoint)
+        cv2.line(f1, (int(p[1] + 0.5), int(p[0] + 0.5)),
+                 (int(vpoint[1] + 0.5), int(vpoint[0] + 0.5)), (255, 0, 0), 1)
+        cv2.line(f2, (int(p[1] + 0.5), int(p[0] + 0.5)),
+                 (int(vpoint[1] + 0.5), int(vpoint[0] + 0.5)), (255, 0, 0), 1)
 
-def visualiseweights(part,f2,pos,weight,f1,i,j,n):
+
+def visualiseweights(part, f2, pos, weight, f1, i, j, n):
     print(pos)
-    print(i,j)
+    print(i, j)
     print(np.shape(part))
     print(n)
-    shape = (np.shape(f1)[0],np.shape(f1)[1])
-    f0=np.zeros(np.shape(f2),dtype=np.uint8)
-    f0[searchradius+pos[0]:pos[0]+np.shape(part)[0]+searchradius,searchradius+pos[1]:searchradius+pos[1]+np.shape(part)[1]]=f1[shape[0] // n * i: shape[0] // n *
-                                      (i + 1) + shape[0] % n, shape[1] // n * j: shape[1] // n *
-                                      (j + 1) + shape[1] % n]
+    shape = (np.shape(f1)[0], np.shape(f1)[1])
+    f0 = np.zeros(np.shape(f2), dtype=np.uint8)
+    f0[searchradius + pos[0]:pos[0] + np.shape(part)[0] + searchradius, searchradius + pos[1]:searchradius + pos[1] + np.shape(part)[1]] = f1[shape[0] // n * i: shape[0] // n *
+                                                                                                                                              (i + 1) + shape[0] % n, shape[1] // n * j: shape[1] // n *
+                                                                                                                                              (j + 1) + shape[1] % n]
     print(f0)
-    cv2.imshow(str(weight),f2)
+    cv2.imshow(str(weight), f2)
     cv2.waitKey(200)
-    cv2.imshow(str(weight),f0)
+    cv2.imshow(str(weight), f0)
     cv2.waitKey(200)
-    cv2.imshow(str(weight),f0//2+f2//2)
+    cv2.imshow(str(weight), f0 // 2 + f2 // 2)
     cv2.waitKey(200)
     cv2.destroyAllWindows()
-        
-        
+
+
 cap = cv2.VideoCapture('flasche.mp4')
 searchradius = 80
 searchstepsize = 20
 #_, f1 = cap.read()
-#print(np.shape(f1))
+# print(np.shape(f1))
 _, f1 = cap.read()
 _, f2 = cap.read()
-
-cf=copy.deepcopy(f1)
-scalrfield,pos,smallframeshape=scalarfieldcreator(cf, f2, 9)
-vpoint=find(scalrfield,pos,smallframeshape)
-drawepipolarlines(pos,vpoint,f1,f2,smallframeshape)
+print(np.shape(f1))
+cf = copy.deepcopy(f1)
+scalrfield, pos, smallframeshape = scalarfieldcreator(cf, f2, 9)
+vpoint = find(scalrfield, pos, smallframeshape)
+drawepipolarlines(pos, vpoint, f1, f2, smallframeshape)
 
 while True:
     cv2.imshow('', f1)
