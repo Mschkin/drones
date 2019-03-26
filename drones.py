@@ -1,9 +1,9 @@
-#import cv2
+import cv2
 import numpy as np
 import time
 import copy
 import sys
-print(sys.version)
+
 
 # fluchtpunkt muss in die mitte verschoben werden
 
@@ -56,6 +56,7 @@ def find(scalarfield, pos, smallframeshape):
     m = np.zeros((2, 2))
     qn = np.array([0., 0.])
 
+    potential = np.zeros((72, 128))
     for i1, vecmat in enumerate(scalarfield):
         for i2, weights in enumerate(vecmat):
             weights = normalise(weights)
@@ -66,11 +67,15 @@ def find(scalarfield, pos, smallframeshape):
                             for vec in nis], dtype=float)
             # remove weights bellow zero
             weights = weights * (weights > 0)
-            plotpotential(nis, cis, weights)
+            potential += addpotential(nis, cis, weights)
             for x, vec in enumerate(nis):
                 for y, ni in enumerate(vec):
                     m += weights[x, y] * np.tensordot(ni, ni, 0)
                     qn += weights[x, y] * ni * cis[x, y]
+
+    allweights = np.array([w for k in weights for w in k])
+    print("shape of allweights")
+    plotpotential(allweights)
     print(m)
     print(np.linalg.inv(m))
     print(qn)
@@ -79,16 +84,23 @@ def find(scalarfield, pos, smallframeshape):
     return (2 * np.linalg.inv(m)@qn + smallframeshape + 2 * [2 * searchradius]) / 2
 
 
-def plotpotential(nis, cis, weights):
-    potential = np.zeros((720, 1280))
-    for index, n in np.ndenumerate(nis):
+def addpotential(nis, cis, weights):
+    potential = np.zeros((72, 128))
+    for index, wei in np.ndenumerate(weights):
         for pos, val in np.ndenumerate(potential):
-            potential[pos] += weights[index[0], index[1]] * \
-                (n@pos - cis[index[0], index[1]])**2
-    potential = 255 - int((potential - np.min(potential)) /
-                          (np.max(potential) - np.min(potential)) * 255 + 0.5)
-    potential = np.array(potential, dtype=np.uint8)
-    cv2.imshow('', potential)
+            potential[pos] += wei * \
+                (nis[index]@pos - cis[index])**2
+    return potential
+
+
+def plotpotential(pot):
+    print("shape of plot ", np.shape(pot))
+    pot = 255 - ((pot - np.min(pot)) /
+                 (np.max(pot) - np.min(pot)) * 255 + 0.5).astype(np.uint8, casting='unsafe')
+
+    print("middle: ", pot[36, 64],
+          " lower right corner ", pot[71, 127])
+    cv2.imshow('', pot)
     cv2.waitKey(5000)
 
 
@@ -124,14 +136,19 @@ def visualiseweights(part, f2, pos, weight, f1, i, j, n):
 
 
 cap = cv2.VideoCapture('flasche.mp4')
-searchradius = 80
-searchstepsize = 20
+searchradius = 8
+searchstepsize = 2
 #_, f1 = cap.read()
 # print(np.shape(f1))
-_, f1 = cap.read()
+for k in range(10):
+    _, f1 = cap.read()
 _, f2 = cap.read()
+
+cv2.resize(f1, (72, 128))
+cv2.resize(f2, (72, 128))
 print(np.shape(f1))
 cf = copy.deepcopy(f1)
+
 scalrfield, pos, smallframeshape = scalarfieldcreator(cf, f2, 9)
 vpoint = find(scalrfield, pos, smallframeshape)
 drawepipolarlines(pos, vpoint, f1, f2, smallframeshape)
