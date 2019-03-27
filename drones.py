@@ -5,7 +5,7 @@ import copy
 import sys
 
 
-# fluchtpunkt muss in die mitte verschoben werden
+# fluchtpunkt muss in die mitte verschoben werden bla bla
 
 
 def splitinparts(frame, n):
